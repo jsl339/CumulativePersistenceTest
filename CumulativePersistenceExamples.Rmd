@@ -1,0 +1,108 @@
+---
+title: "CumulativePersistenceTest"
+author: "John Leland"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(TDA)
+modelling1 <- function(n,d, maxdimension,maxscale, classy = "NA"){
+
+
+DiagRips <- ripsDiag(X = d, maxdimension, maxscale,
+                     library = c("GUDHI", "Dionysus"), location = TRUE, printProgress=FALSE)
+
+Barlength <- (DiagRips$diagram[,3] - DiagRips$diagram[,2])*n^(-1/ncol(d))
+return(Barlength)
+}
+
+hgamma <- function(n, s=1,g =1, dim = 2){
+  gamma <- matrix(c(rgamma(n,s,g)), ncol = dim)
+  modelling1(n,gamma,0,max(gamma))
+}
+
+hnorm <- function(n, mean = 0, sd = 1, dim = 2){
+  norm <- matrix(c(rnorm(n,mean,sd)), ncol = dim)
+  modelling1(n,norm,0,max(norm))
+}
+
+hcauchy <- function(n,s = 1, j = 1, dim = 2){
+  cauchy <- matrix(c(rcauchy(n,s,j)), ncol = dim)
+  modelling1(n,cauchy,0,max(cauchy))
+}
+
+ht <- function(n,s =1,j  =1, dim = 2){
+  t <- matrix(c(rt(n,s,j)), ncol = dim)
+  modelling1(n,t,0,max(t))
+}
+
+hunif <- function(n, min = 0 ,max = 1, dim = 2){
+  unif <- matrix(c(runif(n,min,max)), ncol = dim)
+  modelling1(n,unif,0,max(unif))
+}
+
+hbeta <- function(n, s1 = 0 ,s2 = 1, dim = 2){
+  beta <- matrix(c(rbeta(n,s1,s2)), ncol = dim)
+  modelling1(n,beta,0,max(beta))
+}
+```
+
+
+```{r}
+
+library(parallel)
+integrationdifference <- function(n,f1,f2, p1,p2,p3,p4,dim){
+  b1 <- sapply(n,f1,p1,p2,dim)
+  b2 <- sapply(n,f2,p3,p4,dim)
+  
+  
+  e <- ecdf(b1)
+ e2 <- ecdf(b2)
+ 
+ 
+ b1.partial <- cumsum(b1) / length(b1)
+i1 <- which.max(b1.partial > 0.1)
+m1 <- ceiling(b1[i1])+1 # adding 1 was just to ensure that I properly collected the maximum, does not affect the mathematics. 
+
+b2.partial <- cumsum(b2) / length(b2)
+i2 <- which.max(b2.partial > 0.1)
+m2 <- ceiling(b2[i2])+1 # same as above
+
+upper <- ifelse(m1 >= m2,m1,m2)
+
+  i1 <- integrate(e, 0, upper, subdivisions = 2000) # usage of subdivisions is important. Will throw errors without proper size subdivisions
+  i2 <- integrate(e2, 0, upper, subdivisions = 2000)
+  
+  abs(i1$value - i2$value)
+}
+```
+
+```{r}
+library(mcreplicate)
+b<- 100
+set.seed(700)
+seq <- seq(1,10, by = 1)
+collector <- c()
+for(i in seq){
+int <- mc_replicate(b, integrationdifference(300, hnorm, hunif, p1= i, p2 = 2*i, p3 = 0,p4 = 1, dim = 3), mc.cores = 6)
+collector = c(collector,int)
+}
+```
+
+```{r}
+n = 100
+m = 100
+k = 3
+c = (0.01)^(k-1)
+crit = -log(c)/(n+m)
+crit
+counter <- mean(ifelse(collector > crit,1,0))
+counter
+```
+
