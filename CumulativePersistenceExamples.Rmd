@@ -12,6 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 library(TDA)
+# max dimension is max homological dimension to be used in calculation. 
 modelling1 <- function(n,d, maxdimension,maxscale, classy = "NA"){
 
 
@@ -21,6 +22,9 @@ DiagRips <- ripsDiag(X = d, maxdimension, maxscale,
 Barlength <- (DiagRips$diagram[,3] - DiagRips$diagram[,2])*n^(-1/ncol(d))
 return(Barlength)
 }
+
+# these functions created below are meant to act as a wrapper that will be called upon in
+# a multi-core split, not necessary to run the calculation
 
 hgamma <- function(n, s=1,g =1, dim = 2){
   gamma <- matrix(c(rgamma(n,s,g)), ncol = dim)
@@ -57,6 +61,8 @@ hbeta <- function(n, s1 = 0 ,s2 = 1, dim = 2){
 ```{r}
 
 library(parallel)
+
+# creating another function for the replications
 integrationdifference <- function(n,f1,f2, p1,p2,p3,p4,dim){
   b1 <- sapply(n,f1,p1,p2,dim)
   b2 <- sapply(n,f2,p3,p4,dim)
@@ -84,6 +90,7 @@ upper <- ifelse(m1 >= m2,m1,m2)
 ```
 
 ```{r}
+# this is where the actual examples sit, feel free to change 
 library(mcreplicate)
 b<- 100
 set.seed(700)
@@ -96,9 +103,11 @@ collector = c(collector,int)
 ```
 
 ```{r}
+# n = total number of points called/dimension of matrix
+# m = same as n in this case
 n = 100
 m = 100
-k = 3
+k = 3 #spatial dimension of data
 c = (0.01)^(k-1)
 crit = -log(c)/(n+m)
 crit
