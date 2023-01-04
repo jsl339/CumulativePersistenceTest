@@ -1,0 +1,357 @@
+---
+title: "Research 3"
+author: "John Leland"
+date: '2022-09-24'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(TDA)
+modelling1 <- function(n,d, maxdimension,maxscale, classy = "NA"){
+
+
+DiagRips <- ripsDiag(X = d, maxdimension, maxscale,
+                     library = c("GUDHI", "Dionysus"), location = TRUE, printProgress=FALSE)
+
+Barlength <- (DiagRips$diagram[,3] - DiagRips$diagram[,2])*n^(-1/ncol(d))
+return(Barlength)
+}
+
+overlaygamma <- function(n, s=1,g =1){
+  gamma <- matrix(c(rgamma(n,s,g),rgamma(n,s,g)), ncol = 2)
+  modelling1(n,gamma,0,max(gamma))
+}
+
+overlaynorm <- function(n, mean = 0, sd = 1){
+  norm <- matrix(c(rnorm(n,mean,sd),rnorm(n,mean,sd)), ncol =2)
+  modelling1(n,norm,0,max(norm))
+}
+
+overlaycauchy <- function(n,s = 1, j = 1){
+  cauchy <- matrix(c(rcauchy(n,s,j),rcauchy(n,s,j)), ncol =2)
+  modelling1(n,cauchy,0,max(cauchy))
+}
+
+overlayt <- function(n,s =1,j  =1 ){
+  t <- matrix(c(rt(n,s,j),rt(n,s,j)), ncol = 2)
+  modelling1(n,t,0,max(t))
+}
+
+overlayunif <- function(n, min = 0 ,max = 1){
+  unif <- matrix(c(runif(n,min,max), runif(n,min,max)), ncol = 2)
+  modelling1(n,unif,0,max(unif))
+}
+
+overlaybeta <- function(n, s1 = 0 ,s2 = 1){
+  beta <- matrix(c(rbeta(n,s1,s2), runif(n,s1,s2)), ncol = 2)
+  modelling1(n,beta,0,max(beta))
+}
+```
+
+```{r}
+library(tidyverse)
+n<- 500
+# limit <- c(-1/5,20)
+df <- data.frame(Gamma1 = overlaygamma(n,1), Gamma2 = overlaygamma(n,1), Gamma3 = overlaygamma(n,1), Norm1 = overlaynorm(n), Norm2 = overlaynorm(n), Norm3 = overlaynorm(n), Unif = overlayunif(n,0,10), Beta = overlaybeta(n))
+
+
+library(fitdistrplus)
+library(latticeExtra)
+ecdfplot(~Norm1+ Norm2+ Norm3, data=df, auto.key=list(space='right'),xlim = c(0,1))
+```
+
+```{r}
+df1<- data.frame(n1 = rnorm(n), n2 = rnorm(n, 1,10), g1 = rgamma(n,1), e1 = rexp(n), c1 = rcauchy(n), t1 = rt(n,1), t2 = rt(n,10), u1 = runif(n))
+
+
+ecdfplot(~ n1 +n2+g1+e1+c1+t1+t2+u1, data=df1, auto.key=list(space='right'), xlim  = c(-10,10))
+
+```
+
+
+```{r}
+
+library(parallel)
+integrationdifference <- function(n,f1,f2, p1,p2,p3,p4){
+  b1 <- sapply(n,f1,p1,p2)
+  b2 <- sapply(n,f2,p3,p4)
+  
+  
+  e <- ecdf(b1)
+ e2 <- ecdf(b2)
+ 
+
+b1.partial <- cumsum(b1) / length(b1)
+i1 <- which.max(b1.partial > 0.1)
+m1 <- ceiling(b1[i1])+1
+
+b2.partial <- cumsum(b2) / length(b2)
+i2 <- which.max(b2.partial > 0.1)
+m2 <- ceiling(b2[i2])+1
+
+upper <- ifelse(m1 >= m2,m1,m2)
+ 
+  i1 <- integrate(e, 0, upper, subdivisions = 2000)
+  i2 <- integrate(e2, 0, upper, subdivisions = 2000)
+  
+  abs(i1$value - i2$value)
+}
+```
+
+```{r}
+library(mcreplicate)
+b<- 100
+set.seed(700)
+seq <- seq(1,10, by = 1 )
+opendifference <- c()
+for(i in seq){
+int <- mc_replicate(b, integrationdifference(30, overlaynorm, overlayunif, p1= i, p2 = 2*i, p3 = 0,p4 = 1), mc.cores = 6)
+opendifference = c(opendifference,int)
+}
+```
+
+```{r}
+library(ggplot2)
+count <- c(1:length(opendifference))
+intd <- data.frame(opendifference, count)
+
+plotint<- ggplot(intd, aes(x = opendifference))+
+  geom_histogram()
+plotint
+mean(opendifference)
+hist(opendifference)
+```
+
+```{r}
+library(mcreplicate)
+b<- 100
+set.seed(700)
+opensame <- c()
+for (i in seq){
+int <- mc_replicate(b, integrationdifference(30, overlaynorm, overlaynorm, p1= i, p2 = 2*i, p3 = i, p4 = 2*i), mc.cores = 6)
+opensame <- append(opensame, int)
+}
+```
+
+```{r}
+hist(opensame)
+
+```
+
+```{r}
+vecouts <- c(opensame,opendifference)
+d <- rep(0, times = length(opendifference))
+c <- rep(1, times = length(opensame))
+yes <- c(c,d)
+length(yes)
+dat <- data.frame(vecouts, yes)
+ggplot(dat, aes(x = vecouts, y = yes))+geom_point()
+```
+
+
+```{r, warning = FALSE}
+library(boot)
+glm.fit <- glm(I(yes==1)~vecouts, data=dat, family='binomial')
+cost <- function(r, pi = 0) mean(abs(r-pi) > 0.5)
+
+cv.glm(dat,glmfit = glm.fit,cost,K = 10)$delta[1]
+```
+
+```{r}
+summary(glm(I(yes==1)~vecouts, data=dat, family='binomial'))
+```
+
+Okay, here's where I'm at. Currently, I have run a formula which computes the persistence diagram for a given dataset using their mean, and rate/shape parameter. Then, I calculate the ecdf for PH barlengths, do the same again for another dataset. From here, I decide to integrate both ecdfs, take the difference between their curves. Then, replicate this result many times to see if it is stable. At this point I noticed it seems to center around 0 when distributions are the same, and shift around when they are different distributions.
+
+From here, I decided to set up a vector to run a model on then use K-fold cross validation with k = 15. I set up my vector as above, then computed the cross-validation.
+
+```{r}
+
+library(parallel)
+integration <- function(n,f1,f2, p1 = 1,p2 = 1,p3 =1,p4 = 1,...){
+  b1 <- sapply(n,f1,p1,p2)
+  b2 <- sapply(n,f2,p3,p4)
+  
+  
+  e <- ecdf(b1)
+ e2 <- ecdf(b2)
+ 
+b1.partial <- cumsum(b1) / length(b1)
+i1 <- which.max(b1.partial > 0.1)
+m1 <- ceiling(b1[i1])+1
+
+b2.partial <- cumsum(b2) / length(b2)
+i2 <- which.max(b2.partial > 0.1)
+m2 <- ceiling(b2[i2])+1
+
+upper <- ifelse(m1 >= m2,m1,m2)
+
+  i1 <- integrate(e, 0, upper, subdivisions = 2000)
+  i2 <- integrate(e2, 0, upper, subdivisions = 2000)
+  
+  abs(i1$value - i2$value)
+}
+```
+
+```{r}
+set.seed(700)
+b<- 100
+opendifference <- c()
+opensame <- c()
+seq2  <- seq(1,10, by =1 )
+for(i in seq){
+int <- mc_replicate(b, integration(30, rnorm, runif, p1 = i, p2 = 2*i, p3 = 0, p4 = 1), mc.cores = 6)
+
+opendifference = c(opendifference,int)
+int <- mc_replicate(b, integration(30, rnorm, rnorm, p1 = i,p2 = 2*i, p3 = i,p4 = 2*i), mc.cores = 6)
+opensame <- append(opensame, int)
+}
+```
+
+```{r}
+vecouts2 <- c(opensame,opendifference)
+d2 <- rep(0, times = length(opendifference))
+c2 <- rep(1, times = length(opensame))
+yes2 <- c(c2,d2,recursive = TRUE)
+length(yes2)
+dat2 <- data.frame(vecouts2, yes2)
+```
+
+```{r, warning = FALSE}
+library(boot)
+glm.fit2 <- glm(I(yes2==1)~vecouts2, data=dat2, family='binomial')
+cost <- function(r, pi = 0) mean(abs(r-pi) > 0.5)
+
+cv.glm(dat2,glmfit = glm.fit2,cost,K = 10)$delta[1]
+```
+
+
+It looks like we correctly predict that the distribution is the same using persistent homology than using the same function with only data. I have attempted this with many different distributions, and I have not found any example wherein PH does worse, though that is not to say that one may not exist as I have no math to back up my statement.
+
+Next, I will use real data to see if my model makes accurate predictions.
+
+```{r, warning=FALSE}
+library(dplyr)
+datr <- iris[, c("Sepal.Length", "Species")]
+samp = c()
+for(i in 1:2){
+ bootstrap_sample = datr[sample(seq(1:nrow(datr)), nrow(datr), replace=TRUE),]
+ samp = rbind(samp, i*bootstrap_sample)
+}
+
+plot(samp[,1])
+plot(iris[,1])
+```
+
+```{r}
+samp <- as.data.frame(samp[,1])
+length(datr[,1])
+rips1 <- ripsDiag(X = datr[,1], 0, max(datr[,1]),
+                     library = c("GUDHI", "Dionysus"), location = TRUE, printProgress=FALSE)
+bar1 <- rips1$diagram[,3]
+rips2 <- ripsDiag(X = samp, 0, max(samp),
+                     library = c("GUDHI", "Dionysus"), location = TRUE, printProgress=FALSE)
+bar2 <- rips2$diagram[,3]
+
+
+
+ek <- ecdf(bar1)
+ej <- ecdf(bar2)
+
+plot(ek)
+plot(ej)
+```
+
+```{r}
+i1 <- integrate(ek,0,10)
+i2 <- integrate(ej,0,10)
+i1
+i2
+
+val <- abs(i1$value-i2$value)
+c <- qexp(0.01)
+n <- nrow(datr)
+m <- nrow(samp)
+crit <- -log(c)/(n+m)
+ifelse(val > crit, "different","same")
+crit
+val
+```
+
+
+```{r}
+modeltest =1/(1+exp(-(4.714-33.296*val)))
+ifelse(modeltest > 0.5, "same","different")
+```
+
+```{r}
+rips1 <- ripsDiag(X = iris[,1], 0, max(iris[,1]),
+                     library = c("GUDHI", "Dionysus"), location = TRUE, printProgress=FALSE)
+bar1 <- rips1$diagram[,3]
+
+
+gg <- rnorm(nrow(iris))
+
+rips2 <- ripsDiag(X = iris[,2], 0, max(iris[,2]),
+                     library = c("GUDHI", "Dionysus"), location = TRUE, printProgress=FALSE)
+bar2 <- rips2$diagram[,3]
+
+
+
+ek <- ecdf(bar1)
+ej <- ecdf(bar2)
+
+plot(ek)
+plot(ej)
+
+```
+
+```{r}
+i1 <- integrate(ek,0,10)
+i2 <- integrate(ej,0,10)
+
+
+val <- abs(i2$value-i1$value)
+
+n <- nrow(iris)
+m <- nrow(iris)
+c <- qexp(0.01)
+crit <- -log(c)/(n+m)
+crit
+val
+ifelse(val > crit, "different","same")
+```
+
+2.556 6.011
+
+```{r}
+modeltest = 1/(1+exp(-(4.714-33.296*val)))
+ifelse(modeltest > 0.5, "same","different")
+```
+
+```{r}
+
+ksave <- c()
+set.seed(7)
+for(i in 1:100){
+  for(j in 1:10){
+  n1 <- matrix(c(runif(300,0,1)),ncol = 3)
+  n2 <- matrix(c(runif(300,0,j)),ncol =3 )
+  kssave <- ks.test(n1,n2)
+  #tester <- ifelse(kssave$p.value < 0.05,1,0)
+  ksave <- append(ksave,kssave$p.value)
+  }
+}
+```
+
+```{r}
+mean(ksave)
+
+```
+
+
+
